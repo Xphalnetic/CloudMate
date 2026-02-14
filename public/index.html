@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CloudMate - 优雅的文件共享</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-content">
+                <h1 data-i18n="header.title">CloudMate</h1>
+                <p class="subtitle" data-i18n="header.subtitle">优雅的局域网文件共享</p>
+            </div>
+            <button id="langToggle" class="lang-toggle">🌐 English</button>
+        </header>
+
+        <div class="server-info">
+            <div class="info-card">
+                <span class="info-label" data-i18n="serverInfo.label">访问地址</span>
+                <code id="serverUrl" class="info-code">loading...</code>
+            </div>
+        </div>
+
+        <div class="upload-section">
+            <div class="upload-box" id="uploadBox">
+                <div class="upload-icon-wrapper">
+                    <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                </div>
+                <p class="upload-text" data-i18n="upload.text">点击或拖放文件</p>
+                <p class="upload-subtext" data-i18n="upload.subtext">支持多文件上传</p>
+                <input type="file" id="fileInput" hidden multiple>
+            </div>
+            <div id="uploadProgress" class="upload-progress" style="display: none;">
+                <div class="progress-container">
+                    <div class="progress-bar"><div id="progressFill"></div></div>
+                    <p id="progressText" data-i18n="upload.uploading">上传中...</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="files-section">
+            <div class="section-header">
+                <h2 data-i18n="files.title">📋 文件库</h2>
+            </div>
+            
+            <div class="search-bar">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <path d="m21 21-4.35-4.35"></path>
+                </svg>
+                <input type="text" id="searchInput" class="search-input" data-i18n-placeholder="files.search" placeholder="搜索文件">
+                <div class="search-highlight"></div>
+            </div>
+
+            <div class="stats-bar">
+                <div class="stat-card">
+                    <div class="stat-icon">📊</div>
+                    <div class="stat-content">
+                        <div class="stat-label" data-i18n="files.stats.count">文件数</div>
+                        <div class="stat-value" id="fileCount">0</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">💾</div>
+                    <div class="stat-content">
+                        <div class="stat-label" data-i18n="files.stats.size">已用</div>
+                        <div class="stat-value" id="totalSize">0 B</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="filesList" class="files-list">
+                <p class="empty-message" data-i18n="files.empty">文件库为空</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 文件预览模态框 -->
+    <div id="previewModal" class="modal" style="display: none;">
+        <div class="modal-overlay" onclick="closePreview()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" data-i18n="preview.title">👁 文件预览</h3>
+                <button class="modal-close" onclick="closePreview()">✕</button>
+            </div>
+            <div id="previewContent" class="preview-content"></div>
+        </div>
+    </div>
+
+    <!-- 文件分享模态框 -->
+    <div id="shareModal" class="modal" style="display: none;">
+        <div class="modal-overlay" onclick="closeShare()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" data-i18n="share.title">📤 分享文件</h3>
+                <button class="modal-close" onclick="closeShare()">✕</button>
+            </div>
+            <div class="share-content">
+                <div class="share-link-container">
+                    <label data-i18n="share.link">下载链接</label>
+                    <div class="share-input-group">
+                        <input type="text" id="shareLink" class="share-link" readonly>
+                        <button class="share-copy-btn" onclick="copyShareLink()" data-i18n="share.copy">📋 复制</button>
+                    </div>
+                </div>
+                <div class="qr-divider">或</div>
+                <div class="qr-code-container" style="min-height: 200px; display: flex; align-items: center; justify-content: center;">
+                    <img id="qrCode" alt="二维码" style="max-width: 200px; display: none;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.0/build/qrcode.min.js"></script>
+    <script src="i18n.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
