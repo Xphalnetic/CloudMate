@@ -24,6 +24,17 @@
         </div>
 
         <div class="upload-section">
+            <div class="v2-toolbar">
+                <label class="expiry-control">
+                    <span>保留时间</span>
+                    <select id="expirySelect">
+                        <option value="never">永久</option>
+                        <option value="1h">1小时</option>
+                        <option value="24h">24小时</option>
+                        <option value="7d">7天</option>
+                    </select>
+                </label>
+            </div>
             <div class="upload-box" id="uploadBox">
                 <div class="upload-icon-wrapper">
                     <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -41,6 +52,30 @@
                     <div class="progress-bar"><div id="progressFill"></div></div>
                     <p id="progressText" data-i18n="upload.uploading">上传中...</p>
                 </div>
+            </div>
+        </div>
+
+        <div class="snippet-section">
+            <div class="section-header">
+                <h2>文本快传</h2>
+            </div>
+            <div class="snippet-composer">
+                <textarea id="snippetInput" class="snippet-input" maxlength="20000" placeholder="把要在局域网里传的文字粘到这里"></textarea>
+                <div class="snippet-actions">
+                    <label class="expiry-control compact">
+                        <span>保留</span>
+                        <select id="snippetExpirySelect">
+                            <option value="1h">1小时</option>
+                            <option value="24h" selected>24小时</option>
+                            <option value="7d">7天</option>
+                            <option value="never">永久</option>
+                        </select>
+                    </label>
+                    <button id="snippetSendBtn" class="snippet-send-btn">发送文本</button>
+                </div>
+            </div>
+            <div id="snippetsList" class="snippets-list">
+                <p class="empty-message">暂无文本</p>
             </div>
         </div>
 

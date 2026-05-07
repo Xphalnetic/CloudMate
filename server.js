@@ -46,6 +46,14 @@ const app = express();
 const PORT = 3000;
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 const METADATA_FILE = path.join(UPLOAD_DIR, '.metadata.json');
+const SNIPPETS_FILE = path.join(UPLOAD_DIR, '.snippets.json');
+const MAX_SNIPPET_LENGTH = 20000;
+const EXPIRY_OPTIONS = {
+  never: null,
+  '1h': 60 * 60 * 1000,
+  '24h': 24 * 60 * 60 * 1000,
+  '7d': 7 * 24 * 60 * 60 * 1000
+};
 
 // 确保上传目录存在
 if (!fs.existsSync(UPLOAD_DIR)) {
@@ -56,6 +64,9 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 function initMetadata() {
   if (!fs.existsSync(METADATA_FILE)) {
     fs.writeFileSync(METADATA_FILE, JSON.stringify({}, null, 2));
+  }
+  if (!fs.existsSync(SNIPPETS_FILE)) {
+    fs.writeFileSync(SNIPPETS_FILE, JSON.stringify([], null, 2));
   }
 }
 
@@ -81,7 +92,69 @@ function saveMetadata(metadata) {
   }
 }
 
+function readSnippets() {
+  try {
+    if (fs.existsSync(SNIPPETS_FILE)) {
+      const data = fs.readFileSync(SNIPPETS_FILE, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (error) {
+    console.error('读取snippets失败:', error);
+  }
+  return [];
+}
+
+function saveSnippets(snippets) {
+  try {
+    fs.writeFileSync(SNIPPETS_FILE, JSON.stringify(snippets, null, 2));
+  } catch (error) {
+    console.error('保存snippets失败:', error);
+  }
+}
+
+function getExpiresAt(expiry) {
+  const duration = EXPIRY_OPTIONS[expiry] ?? null;
+  return duration ? new Date(Date.now() + duration).toISOString() : null;
+}
+
+function isExpired(expiresAt) {
+  return Boolean(expiresAt && new Date(expiresAt).getTime() <= Date.now());
+}
+
+function cleanupExpiredItems() {
+  const metadata = readMetadata();
+  let metadataChanged = false;
+
+  Object.entries(metadata).forEach(([filename, fileMetadata]) => {
+    if (!isExpired(fileMetadata.expiresAt)) return;
+
+    const filePath = path.join(UPLOAD_DIR, filename);
+    if (path.resolve(filePath).startsWith(path.resolve(UPLOAD_DIR)) && fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch (error) {
+        console.error('删除过期文件失败:', filename, error);
+      }
+    }
+
+    delete metadata[filename];
+    metadataChanged = true;
+  });
+
+  if (metadataChanged) {
+    saveMetadata(metadata);
+  }
+
+  const snippets = readSnippets();
+  const activeSnippets = snippets.filter(snippet => !isExpired(snippet.expiresAt));
+  if (activeSnippets.length !== snippets.length) {
+    saveSnippets(activeSnippets);
+  }
+}
+
 initMetadata();
+cleanupExpiredItems();
+setInterval(cleanupExpiredItems, 60 * 1000);
 
 // 配置multer
 const storage = multer.diskStorage({
@@ -140,11 +213,12 @@ function getClientDeviceInfo(req) {
 // 获取文件列表
 app.get('/api/files', (req, res) => {
   try {
+    cleanupExpiredItems();
     const files = fs.readdirSync(UPLOAD_DIR);
     const metadata = readMetadata();
     
     const fileList = files
-      .filter(filename => filename !== '.metadata.json')
+      .filter(filename => !filename.startsWith('.'))
       .map(filename => {
         const filePath = path.join(UPLOAD_DIR, filename);
         const stats = fs.statSync(filePath);
@@ -156,7 +230,9 @@ app.get('/api/files', (req, res) => {
           sizeFormatted: formatFileSize(stats.size),
           modified: stats.mtime,
           deviceId: fileMetadata.deviceId || 'unknown',
-          deviceName: fileMetadata.deviceName || '未知设备'
+          deviceName: fileMetadata.deviceName || '未知设备',
+          uploadTime: fileMetadata.uploadTime || stats.birthtime,
+          expiresAt: fileMetadata.expiresAt || null
         };
       });
     fileList.sort((a, b) => b.modified - a.modified);
@@ -188,7 +264,8 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
   metadata[req.file.originalname] = {
     deviceId: deviceInfo.deviceId,
     deviceName: deviceInfo.deviceName,
-    uploadTime: new Date().toISOString()
+    uploadTime: new Date().toISOString(),
+    expiresAt: getExpiresAt(req.body.expiresIn || 'never')
   };
   saveMetadata(metadata);
   
@@ -200,9 +277,54 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
       size: req.file.size,
       sizeFormatted: formatFileSize(req.file.size),
       deviceId: deviceInfo.deviceId,
-      deviceName: deviceInfo.deviceName
+      deviceName: deviceInfo.deviceName,
+      expiresAt: metadata[req.file.originalname].expiresAt
     }
   });
+});
+
+app.get('/api/snippets', (req, res) => {
+  cleanupExpiredItems();
+  const snippets = readSnippets();
+  res.json(snippets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+});
+
+app.post('/api/snippets', (req, res) => {
+  const text = String(req.body.text || '').trim();
+  if (!text) {
+    return res.status(400).json({ error: '文本不能为空' });
+  }
+
+  if (text.length > MAX_SNIPPET_LENGTH) {
+    return res.status(400).json({ error: `文本不能超过 ${MAX_SNIPPET_LENGTH} 个字符` });
+  }
+
+  const deviceInfo = getClientDeviceInfo(req);
+  const snippet = {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+    text,
+    deviceId: deviceInfo.deviceId,
+    deviceName: deviceInfo.deviceName,
+    createdAt: new Date().toISOString(),
+    expiresAt: getExpiresAt(req.body.expiresIn || '24h')
+  };
+
+  const snippets = readSnippets();
+  snippets.unshift(snippet);
+  saveSnippets(snippets.slice(0, 100));
+  res.json({ success: true, snippet });
+});
+
+app.delete('/api/snippets/:id', (req, res) => {
+  const snippets = readSnippets();
+  const nextSnippets = snippets.filter(snippet => snippet.id !== req.params.id);
+
+  if (nextSnippets.length === snippets.length) {
+    return res.status(404).json({ error: '文本不存在' });
+  }
+
+  saveSnippets(nextSnippets);
+  res.json({ success: true });
 });
 
 // 下载文件

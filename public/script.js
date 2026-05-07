@@ -9,9 +9,16 @@ const serverUrlElement = document.getElementById('serverUrl');
 const searchInput = document.getElementById('searchInput');
 const fileCountElement = document.getElementById('fileCount');
 const totalSizeElement = document.getElementById('totalSize');
+const expirySelect = document.getElementById('expirySelect');
+const snippetInput = document.getElementById('snippetInput');
+const snippetExpirySelect = document.getElementById('snippetExpirySelect');
+const snippetSendBtn = document.getElementById('snippetSendBtn');
+const snippetsList = document.getElementById('snippetsList');
 
 let allFiles = [];
+let allSnippets = [];
 let lastFilesHash = '';
+let lastSnippetsHash = '';
 let serverUrl = '';
 let expandedDevices = {};
 let deviceId = '';
@@ -63,10 +70,12 @@ document.addEventListener('DOMContentLoaded', () => {
   initDeviceId();
   loadServerInfo();
   loadFiles();
+  loadSnippets();
   setupEventListeners();
   setupLanguageToggle();
   // 每5秒刷新一次文件列表
   setInterval(loadFiles, 5000);
+  setInterval(loadSnippets, 5000);
 });
 
 // 设置语言切换
@@ -113,6 +122,10 @@ function setupEventListeners() {
     const keyword = e.target.value.toLowerCase();
     renderFiles(keyword);
   });
+
+  if (snippetSendBtn) {
+    snippetSendBtn.addEventListener('click', createSnippet);
+  }
 
   // 点击模态框外部关闭
   document.getElementById('previewModal').addEventListener('click', (e) => {
@@ -180,6 +193,7 @@ async function uploadFile(file) {
   formData.append('file', file);
   formData.append('deviceId', deviceId);
   formData.append('deviceName', deviceName);
+  formData.append('expiresIn', expirySelect ? expirySelect.value : 'never');
 
   uploadProgress.style.display = 'block';
   progressFill.style.width = '0%';
@@ -228,6 +242,103 @@ async function uploadFile(file) {
     setTimeout(() => {
       uploadProgress.style.display = 'none';
     }, 2000);
+  }
+}
+
+async function loadSnippets() {
+  if (!snippetsList) return;
+
+  try {
+    const response = await fetch('/api/snippets');
+    const snippets = await response.json();
+    const newHash = JSON.stringify(snippets);
+
+    if (newHash !== lastSnippetsHash) {
+      allSnippets = snippets;
+      lastSnippetsHash = newHash;
+      renderSnippets();
+    }
+  } catch (error) {
+    console.error('加载文本快传失败:', error);
+    snippetsList.innerHTML = '<p class="empty-message">文本加载失败，请刷新重试</p>';
+  }
+}
+
+async function createSnippet() {
+  const text = snippetInput.value.trim();
+  if (!text) {
+    alert('请输入要发送的文本');
+    return;
+  }
+
+  snippetSendBtn.disabled = true;
+  snippetSendBtn.textContent = '发送中...';
+
+  try {
+    const response = await fetch('/api/snippets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text,
+        expiresIn: snippetExpirySelect ? snippetExpirySelect.value : '24h',
+        deviceId,
+        deviceName
+      })
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || '发送失败');
+    }
+
+    snippetInput.value = '';
+    await loadSnippets();
+  } catch (error) {
+    alert(error.message || '发送失败');
+  } finally {
+    snippetSendBtn.disabled = false;
+    snippetSendBtn.textContent = '发送文本';
+  }
+}
+
+function renderSnippets() {
+  if (!allSnippets.length) {
+    snippetsList.innerHTML = '<p class="empty-message">暂无文本</p>';
+    return;
+  }
+
+  snippetsList.innerHTML = allSnippets.map(snippet => `
+    <div class="snippet-item">
+      <div class="snippet-meta">
+        <span>${escapeHtml(snippet.deviceName || '未知设备')}</span>
+        <span>${formatDateTime(snippet.createdAt)}</span>
+        <span>${formatExpiry(snippet.expiresAt)}</span>
+      </div>
+      <pre class="snippet-text">${escapeHtml(snippet.text)}</pre>
+      <div class="snippet-item-actions">
+        <button class="btn btn-download" onclick="copySnippet('${snippet.id}')">复制</button>
+        <button class="btn btn-delete" onclick="deleteSnippet('${snippet.id}')">删除</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function copySnippet(id) {
+  const snippet = allSnippets.find(item => item.id === id);
+  if (!snippet) return;
+
+  navigator.clipboard.writeText(snippet.text)
+    .then(() => alert('已复制'))
+    .catch(() => alert('复制失败，请手动复制'));
+}
+
+async function deleteSnippet(id) {
+  try {
+    const response = await fetch(`/api/snippets/${id}`, { method: 'DELETE' });
+    if (!response.ok) throw new Error('删除失败');
+    await loadSnippets();
+  } catch (error) {
+    alert(error.message || '删除失败');
   }
 }
 
@@ -321,7 +432,7 @@ function renderFiles(keyword) {
                 <div class="file-icon">${ext.toUpperCase()}</div>
                 <div class="file-info">
                   <div class="file-name" title="${file.name}">${file.name}</div>
-                  <div class="file-size">${file.sizeFormatted}</div>
+                  <div class="file-size">${file.sizeFormatted} · ${formatExpiry(file.expiresAt)}</div>
                 </div>
                 <div class="file-actions">
                   ${isPreviewable ? `<button class="btn btn-preview" onclick="openPreview('${encodeName(file.name)}', '${file.name}')">${t('actions.preview')}</button>` : ''}
@@ -523,6 +634,26 @@ function escapeHtml(text) {
     "'": '&#039;'
   };
   return text.replace(/[&<>"']/g, m => map[m]);
+}
+
+function formatDateTime(value) {
+  if (!value) return '';
+  return new Date(value).toLocaleString();
+}
+
+function formatExpiry(value) {
+  if (!value) return '永久';
+
+  const diff = new Date(value).getTime() - Date.now();
+  if (diff <= 0) return '即将清理';
+
+  const minutes = Math.ceil(diff / 60000);
+  if (minutes < 60) return `${minutes}分钟后过期`;
+
+  const hours = Math.ceil(minutes / 60);
+  if (hours < 24) return `${hours}小时后过期`;
+
+  return `${Math.ceil(hours / 24)}天后过期`;
 }
 
 // 格式化文件大小
